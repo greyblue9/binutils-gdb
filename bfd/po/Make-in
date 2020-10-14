@@ -253,22 +253,22 @@ SRC-POTFILES: SRC-POTFILES.in
 	  else \
 	    posrcprefix="../"; \
 	  fi; \
-	  rm -f $@-t $@ \
+	  true \
 	    && (sed -e '/^#/d' \
 	            -e '/^[ 	]*$$/d' \
 		    -e "s@.*@	$$posrcprefix& \\\\@" < $(srcdir)/$@.in \
 		| sed -e '$$s/\\$$//') > $@-t \
-	    && chmod a-w $@-t \
-	    && mv $@-t $@ )
+	
+	    mv $@-t $@
 
 BLD-POTFILES: BLD-POTFILES.in
-	  ( rm -f $@-t $@ \
+	  ( true \
 	    && (sed -e '/^#/d' \
 	            -e '/^[ 	]*$$/d' \
 		    -e "s@.*@	../& \\\\@" < $(srcdir)/$@.in \
 		| sed -e '$$s/\\$$//') > $@-t \
-	    && chmod a-w $@-t \
-	    && mv $@-t $@ )
+	
+	    mv $@-t $@
 
 SRC-POTFILES.in: @MAINT@ ../Makefile
 	cd .. && $(MAKE) po/SRC-POTFILES.in
