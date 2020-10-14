@@ -238,12 +238,12 @@ POTFILES: POTFILES.in
 	  else \
 	    posrcprefix="../"; \
 	  fi; \
-	  rm -f $@-t $@ \
-	    && (sed -e '/^#/d' -e '/^[ 	]*$$/d' \
+	  true \
+	    && sed -e '/^#/d' -e '/^[ 	]*$$/d' \
 		    -e "s@.*@	$$posrcprefix& \\\\@" < $(srcdir)/$@.in \
 		| sed -e '$$s/\\$$//') > $@-t \
-	    && chmod a-w $@-t \
-	    && mv $@-t $@ )
+	
+	    mv $@-t $@
 
 POTFILES.in: @MAINT@ ../Makefile
 	cd .. && $(MAKE) po/POTFILES.in
