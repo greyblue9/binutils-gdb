@@ -254,7 +254,7 @@ SRC-POTFILES: SRC-POTFILES.in
 	    posrcprefix="../"; \
 	  fi; \
 	  true \
-	    && (sed -e '/^#/d' \
+	    && sed -e '/^#/d' \
 	            -e '/^[ 	]*$$/d' \
 		    -e "s@.*@	$$posrcprefix& \\\\@" < $(srcdir)/$@.in \
 		| sed -e '$$s/\\$$//') > $@-t \
@@ -263,7 +263,7 @@ SRC-POTFILES: SRC-POTFILES.in
 
 BLD-POTFILES: BLD-POTFILES.in
 	  ( true \
-	    && (sed -e '/^#/d' \
+	    && sed -e '/^#/d' \
 	            -e '/^[ 	]*$$/d' \
 		    -e "s@.*@	../& \\\\@" < $(srcdir)/$@.in \
 		| sed -e '$$s/\\$$//') > $@-t \
