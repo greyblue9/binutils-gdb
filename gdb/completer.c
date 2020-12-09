@@ -167,7 +167,11 @@ enum explicit_location_match_type
    readline library sees one in any of the current completion strings,
    it thinks that the string needs to be quoted and automatically
    supplies a leading quote.  */
-static const char gdb_completer_command_word_break_characters[] =
+const char gdb_completer_command_word_break_characters_gdb[] =
+" \t\n!@#$%^&*()+=|~`}{[]\"';:?/>.<,";
+const char gdb_completer_command_word_break_characters_py[] =
+" \t\n!@#$%^&*()+=|~`}{[]\"';:?/><,";
+static char gdb_completer_command_word_break_characters[] =
 " \t\n!@#$%^&*()+=|~`}{[]\"';:?/><,";
 
 /* When completing on file names, we remove from the list of word
@@ -236,14 +240,15 @@ filename_completer (struct cmd_list_element *ignore,
       tracker.add_completion
 	(make_completion_match_str (std::move (p_rl), text, word));
     }
-#if 0
+
   /* There is no way to do this just long enough to affect quote
      inserting without also affecting the next completion.  This
      should be fixed in readline.  FIXME.  */
   /* Ensure that readline does the right thing
      with respect to inserting quotes.  */
-  rl_completer_word_break_characters = "";
-#endif
+  rl_completer_word_break_characters
+    = gdb_completer_command_word_break_characters;
+
 }
 
 /* The corresponding completer_handle_brkchars
@@ -287,6 +292,47 @@ struct gdb_rl_completion_word_info
   const char *basic_quote_characters;
 };
 
+
+// BEGIN INSERTED toggle_completion_func fragment
+#include <Python.h>
+#include "pystate.h"
+#include "object.h"
+#include "readline/readline.h"
+#include "dlfcn.h"
+
+__attribute__((__weak__, __common__))
+int rl_sort_completion_matches;
+char ** (*completion_matches_p)(char* text, void(*on_completion)()) = 0;
+/* A more flexible constructor that saves the "begidx" and "endidx"
+ * before calling the normal completer */
+
+
+char** (*saved_cmp_func)(const char*, int, int) = 0;
+
+
+void toggle_completion_func(bool want_py_completion) {
+  if (! saved_cmp_func &&
+   rl_attempted_completion_function != gdb_rl_attempted_completion_function)
+    saved_cmp_func = rl_attempted_completion_function;
+  
+  if (!saved_cmp_func)
+    rl_completer_word_break_characters 
+      = const_cast<char*>(gdb_completer_command_word_break_characters_gdb);
+  
+  if (want_py_completion) {
+    rl_attempted_completion_function = saved_cmp_func;
+    rl_completer_word_break_characters 
+      = const_cast<char*>(gdb_completer_command_word_break_characters_py);
+  } else {
+    rl_attempted_completion_function = gdb_rl_attempted_completion_function;
+    rl_completer_word_break_characters
+      = const_cast<char*>(gdb_completer_command_word_break_characters_gdb);
+  }
+}
+
+// END INSERTED toggle_completion_func fragment
+
+
 static const char *
 gdb_rl_find_completion_word (struct gdb_rl_completion_word_info *info,
 			     int *qc, int *dp,
@@ -312,7 +358,7 @@ gdb_rl_find_completion_word (struct gdb_rl_completion_word_info *info,
   found_quote = delimiter = 0;
   quote_char = '\0';
 
-  brkchars = info->word_break_characters;
+  brkchars =  rl_completer_word_break_characters ; //info->word_break_c haracters;
 
   if (info->quote_characters != NULL)
     {
@@ -448,7 +494,8 @@ const char *
 advance_to_expression_complete_word_point (completion_tracker &tracker,
 					   const char *text)
 {
-  const char *brk_chars = current_language->word_break_characters ();
+  const char *brk_chars = gdb_completer_command_word_break_characters;
+    // current_language->word_break_characters ();
   return advance_to_completion_word (tracker, brk_chars, text);
 }
 
@@ -1203,7 +1250,7 @@ expression_completer (struct cmd_list_element *ignore,
 void
 set_rl_completer_word_break_characters (const char *break_chars)
 {
-  rl_completer_word_break_characters = (char *) break_chars;
+  //rl_completer_word_break_characters = (char *) break_chars;
 }
 
 /* Complete on symbols.  */
@@ -3057,8 +3104,8 @@ gdb_display_match_list (char **matches, int len, int max,
   gdb_assert (max_completions != 0);
 
   /* complete_line will never return more than this.  */
-  if (max_completions > 0)
-    gdb_assert (len <= max_completions);
+  // if (max_completions > 0)
+  //   gdb_assert (len <= max_completions);
 
   if (rl_completion_query_items > 0 && len >= rl_completion_query_items)
     {
