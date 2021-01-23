@@ -1,0 +1,34 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ master, greyblue9/py-completion ]
+  pull_request:
+    branches: [ master, greyblue9/py-completion ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 1
+
+    - name: Install dependencies
+      run: sudo apt-get install libpython3-dev python3-dev libxml2-dev xsltproc remake libtool automake autoconf m4 gettext autotools-dev texinfo m4 perl
+
+    - name: configure
+      run: mkdir build && cd build && ../configure --disable-stripping --enable-debug --disable-werror --disable-dependency-tracking --with-python3=/usr/bin/python3 --enable-widec --libexecdir=/usr/lib --with-python=/usr/bin/python3 --enable-system-readline --enable-system-zlib --disable-nls --without-guile --prefix=/usr --disable-gdbserver --disable-sim --disable-ld --disable-binutils --disable-gold --with-auto-load-safe-path=/ --with-gdb-datadir=/usr/share/gdb --enable-obsolete --enable-maintainer-mode HAVE_PYTHON=1 
+
+    - name: make
+      run: env PYTHON_CPPFLAGS="-I/usr/include/python3 -I/usr/include/python3.9 -I/usr/include/python3.6" DMGL_NO_RECURSE_LIMIT=1 PYTHON_CPPFLAGS="-I/usr/include/python3 -I/usr/include/python3.9 -I/usr/include/python3.6" ac_cv_path_python_prog_path=/usr/bin ac_cv_path_python_prog=python3  ac_cv_python_prefix=/usr/bin/python3 found_usable_python=yes gdb_cv_readline_ok=yes have_python_config=yes CPPFLAGS="-DHAVE_PYTHON=1 -DIS_PY3K=1 -Ipython -I../ -I../gdb/python -ggdb3 -Og -gdwarf-5 -Wall -Wextra -fdiagnostics-color=always" CXXFLAGS="-fpermissive -fuse-ld=gold -Wl,--trace,-z,muldefs" remake -C build --trace V=1 VERBOSE=1 -e GCC_TRUE='echo -n "cd $$( pwd ) && "'
+    
+    - name: upload-executable
+      uses: actions/upload-artifact@v2
+      with:
+       name: outputs
+       path: |
+             gdb/gdb
+
