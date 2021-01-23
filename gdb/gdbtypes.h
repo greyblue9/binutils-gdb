@@ -446,7 +446,7 @@ struct dynamic_prop
 
   LONGEST const_val () const
   {
-    gdb_assert (m_kind == PROP_CONST);
+    ;
 
     return m_data.const_val;
   }
