@@ -3,7 +3,6 @@ echo Setting up the environment for debugging gdb.\n
 if !$gdb_init_done
   set variable $gdb_init_done = 1
 
-  set complaints 1
 
   b internal_error
 
