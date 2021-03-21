@@ -716,15 +716,20 @@ dwarf_decode_macro_bytes (dwarf2_per_objfile *per_objfile,
 	    else
 	      {
 		*slot = (void *) new_mac_ptr;
-
-		dwarf_decode_macro_bytes (per_objfile, builder, include_bfd,
+		if ((current_file && strstr(current_file->filename, "/usr/include") == 0) ||
+		    (current_file && current_file->included_by &&
+		     strstr(current_file->included_by->filename, "/usr/include") == 0))  {
+		  // do nothing
+		} else {
+		  dwarf_decode_macro_bytes (per_objfile, builder, include_bfd,
 					  new_mac_ptr, include_mac_end,
 					  current_file, lh, section,
 					  section_is_gnu, is_dwz, offset_size,
 					  str_section, str_offsets_section,
 					  str_offsets_base, include_hash);
 
-		htab_remove_elt (include_hash, (void *) new_mac_ptr);
+		  htab_remove_elt (include_hash, (void *) new_mac_ptr);
+		}
 	      }
 	  }
 	  break;
