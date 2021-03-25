@@ -167,11 +167,14 @@ enum explicit_location_match_type
    readline library sees one in any of the current completion strings,
    it thinks that the string needs to be quoted and automatically
    supplies a leading quote.  */
-static const char gdb_completer_command_word_break_characters[] =
+const char gdb_completer_command_word_break_characters_gdb[] =
+" \t\n!@#$%^&*()+=|~`}{[]\"';:?/>.<,";
+const char gdb_completer_command_word_break_characters_py[] =
+" \t\n!@#$%^&*()+=|~`}{[]\"';:?/><,";
+static char gdb_completer_command_word_break_characters[] =
 " \t\n!@#$%^&*()+=|~`}{[]\"';:?/><,";
 
-/* When completing on file names, we remove from the list of word
-   break characters any characters that are commonly used in file
+/* When completing on file names, we remove from the list of word   break characters any characters that are commonly used in file
    names, such as '-', '+', '~', etc.  Otherwise, readline displays
    incorrect completion candidates.  */
 /* MS-DOS and MS-Windows use colon as part of the drive spec, and most
@@ -228,26 +231,25 @@ filename_completer (struct cmd_list_element *ignore,
 	 will loop indefinitely.  */
       subsequent_name = 1;
       /* Like emacs, don't complete on old versions.  Especially
-	 useful in the "source" command.  */
+         useful in the "source" command.  */
       const char *p = p_rl.get ();
       if (p[strlen (p) - 1] == '~')
 	continue;
-
       tracker.add_completion
 	(make_completion_match_str (std::move (p_rl), text, word));
     }
-#if 0
+
   /* There is no way to do this just long enough to affect quote
      inserting without also affecting the next completion.  This
      should be fixed in readline.  FIXME.  */
   /* Ensure that readline does the right thing
      with respect to inserting quotes.  */
-  rl_completer_word_break_characters = "";
-#endif
+  rl_completer_word_break_characters
+    = gdb_completer_command_word_break_characters;
+
 }
 
-/* The corresponding completer_handle_brkchars
-   implementation.  */
+/* The corresponding completer_handle_brkchars   implementation.  */
 
 static void
 filename_completer_handle_brkchars (struct cmd_list_element *ignore,
@@ -287,10 +289,50 @@ struct gdb_rl_completion_word_info
   const char *basic_quote_characters;
 };
 
+
+// BEGIN INSERTED toggle_completion_func fragment
+#include <Python.h>
+#include "pystate.h"
+#include "object.h"
+#include "readline/readline.h"
+#include "dlfcn.h"
+
+__attribute__((__weak__, __common__))
+int rl_sort_completion_matches;
+char ** (*completion_matches_p)(char* text, void(*on_completion)()) = 0;
+/* A more flexible constructor that saves the "begidx" and "endidx"
+ * before calling the normal completer */
+
+
+char** (*saved_cmp_func)(const char*, int, int) = 0;
+
+
+void toggle_completion_func(bool want_py_completion) {
+  if (! saved_cmp_func &&
+   rl_attempted_completion_function != gdb_rl_attempted_completion_function)
+    saved_cmp_func = rl_attempted_completion_function;
+
+  if (!saved_cmp_func)
+    rl_completer_word_break_characters
+      = const_cast<char*>(gdb_completer_command_word_break_characters_gdb);
+
+  if (want_py_completion) {
+    rl_attempted_completion_function = saved_cmp_func;
+    rl_completer_word_break_characters
+      = const_cast<char*>(gdb_completer_command_word_break_characters_py);
+  } else {
+    rl_attempted_completion_function = gdb_rl_attempted_completion_function;
+    rl_completer_word_break_characters
+      = const_cast<char*>(gdb_completer_command_word_break_characters_gdb);
+  }
+}
+
+// END INSERTED toggle_completion_func fragment
+
+
 static const char *
 gdb_rl_find_completion_word (struct gdb_rl_completion_word_info *info,
-			     int *qc, int *dp,
-			     const char *line_buffer)
+			     int *qc, int *dp,			     const char *line_buffer)
 {
   int scan, end, found_quote, delimiter, pass_next, isbrk;
   char quote_char;
@@ -312,11 +354,10 @@ gdb_rl_find_completion_word (struct gdb_rl_completion_word_info *info,
   found_quote = delimiter = 0;
   quote_char = '\0';
 
-  brkchars = info->word_break_characters;
+  brkchars =  rl_completer_word_break_characters ; //info->word_break_c haracters;
 
   if (info->quote_characters != NULL)
-    {
-      /* We have a list of characters which can be used in pairs to
+    {      /* We have a list of characters which can be used in pairs to
 	 quote substrings for the completer.  Try to find the start of
 	 an unclosed quoted substring.  */
       /* FOUND_QUOTE is set so we know what kind of quotes we
@@ -448,10 +489,10 @@ const char *
 advance_to_expression_complete_word_point (completion_tracker &tracker,
 					   const char *text)
 {
-  const char *brk_chars = current_language->word_break_characters ();
+  const char *brk_chars = gdb_completer_command_word_break_characters;
+    // current_language->word_break_characters ();
   return advance_to_completion_word (tracker, brk_chars, text);
 }
-
 /* See completer.h.  */
 
 const char *
@@ -1136,10 +1177,41 @@ add_struct_fields (struct type *type, completion_list &output,
 
 /* See completer.h.  */
 
+static const char *get_error_name(const enum errors err) {
+  switch (err) {
+    case GDB_NO_ERROR: return "GDB_NO_ERROR";
+    case GENERIC_ERROR: return "GENERIC_ERROR";
+    case NOT_FOUND_ERROR: return "NOT_FOUND_ERROR";
+    case TLS_NO_LIBRARY_SUPPORT_ERROR: return "TLS_NO_LIBRARY_SUPPORT_ERROR";
+    case TLS_LOAD_MODULE_NOT_FOUND_ERROR: return "TLS_LOAD_MODULE_NOT_FOUND_ERROR";
+    case TLS_NOT_ALLOCATED_YET_ERROR: return "TLS_NOT_ALLOCATED_YET_ERROR";
+    case TLS_GENERIC_ERROR: return "TLS_GENERIC_ERROR";
+    case XML_PARSE_ERROR: return "XML_PARSE_ERROR";
+    case MEMORY_ERROR: return "MEMORY_ERROR";
+    case NOT_AVAILABLE_ERROR: return "NOT_AVAILABLE_ERROR";
+    case OPTIMIZED_OUT_ERROR: return "OPTIMIZED_OUT_ERROR";
+    case NO_ENTRY_VALUE_ERROR: return "NO_ENTRY_VALUE_ERROR";
+    case TARGET_CLOSE_ERROR: return "TARGET_CLOSE_ERROR";
+    case UNDEFINED_COMMAND_ERROR: return "UNDEFINED_COMMAND_ERROR";
+    case NOT_SUPPORTED_ERROR: return "NOT_SUPPORTED_ERROR";
+    case MAX_COMPLETIONS_REACHED_ERROR: return "MAX_COMPLETIONS_REACHED_ERROR";
+    default: return "(invalid enum errors value)";
+  }
+}
+
+static const char *get_return_reason_name(const enum return_reason reason) {
+  switch (reason) {
+    case RETURN_QUIT: return "RETURN_QUIT";
+    case RETURN_ERROR: return "RETURN_ERROR";
+    default: return "(invalid enum return_reason value)";
+  }
+}
+
+
+
 void
 complete_expression (completion_tracker &tracker,
-		     const char *text, const char *word)
-{
+		     const char *text, const char *word){
   struct type *type = NULL;
   gdb::unique_xmalloc_ptr<char> fieldname;
   enum type_code code = TYPE_CODE_UNDEF;
@@ -1203,11 +1275,10 @@ expression_completer (struct cmd_list_element *ignore,
 void
 set_rl_completer_word_break_characters (const char *break_chars)
 {
-  rl_completer_word_break_characters = (char *) break_chars;
+  //rl_completer_word_break_characters = (char *) break_chars;
 }
 
 /* Complete on symbols.  */
-
 void
 symbol_completer (struct cmd_list_element *ignore,
 		  completion_tracker &tracker,
@@ -2655,12 +2726,11 @@ gdb_printable_part (char *pathname)
   else if (temp[1] == '\0')
     {
       for (x = temp - 1; x > pathname; x--)
-	if (*x == '/')
-	  break;
+        if (*x == '/')
+          break;
       return ((*x == '/') ? x + 1 : pathname);
     }
-  else
-    return ++temp;
+  else    return ++temp;
 }
 
 /* Compute width of STRING when displayed on screen by print_filename.
@@ -2758,19 +2828,18 @@ gdb_fnprint (const char *to_print, int prefix_bytes,
   while (*s)
     {
       if (CTRL_CHAR (*s))
-	{
-	  displayer->putch (displayer, '^');
-	  displayer->putch (displayer, UNCTRL (*s));
-	  printed_len += 2;
-	  s++;
+        {
+          displayer->putch (displayer, '^');
+          displayer->putch (displayer, UNCTRL (*s));
+          printed_len += 2;
+          s++;
 #if defined (HANDLE_MULTIBYTE)
 	  memset (&ps, 0, sizeof (mbstate_t));
 #endif
-	}
+        }
       else if (*s == RUBOUT)
 	{
-	  displayer->putch (displayer, '^');
-	  displayer->putch (displayer, '?');
+	  displayer->putch (displayer, '^');	  displayer->putch (displayer, '?');
 	  printed_len += 2;
 	  s++;
 #if defined (HANDLE_MULTIBYTE)
@@ -3056,12 +3125,11 @@ gdb_display_match_list (char **matches, int len, int max,
   gdb_assert (max_completions != 0);
 
   /* complete_line will never return more than this.  */
-  if (max_completions > 0)
-    gdb_assert (len <= max_completions);
+  // if (max_completions > 0)
+  //   gdb_assert (len <= max_completions);
 
   if (rl_completion_query_items > 0 && len >= rl_completion_query_items)
-    {
-      char msg[100];
+    {      char msg[100];
 
       /* We can't use *query here because they wait for <RET> which is
 	 wrong here.  This follows the readline version as closely as possible

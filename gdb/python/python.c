@@ -3,7 +3,6 @@
    Copyright (C) 2008-2021 Free Software Foundation, Inc.
 
    This file is part of GDB.
-
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 3 of the License, or
@@ -106,9 +105,12 @@ int gdb_python_initialized;
 
 extern PyMethodDef python_GdbMethods[];
 
+#ifdef IS_PY3K
+extern struct PyModuleDef python_GdbModuleDef;
+#endif
+
 PyObject *gdb_module;
 PyObject *gdb_python_module;
-
 /* Some string constants we may wish to use.  */
 PyObject *gdbpy_to_string_cst;
 PyObject *gdbpy_children_cst;
@@ -190,10 +192,11 @@ const struct extension_language_ops python_extension_ops =
   gdbpy_colorize,
 };
 
+void toggle_completion_func(bool want_py_completion);
+
 /* Architecture and language to be used in callbacks from
    the Python interpreter.  */
-struct gdbarch *python_gdbarch;
-const struct language_defn *python_language;
+struct gdbarch *python_gdbarch;const struct language_defn *python_language;
 
 gdbpy_enter::gdbpy_enter  (struct gdbarch *gdbarch,
 			   const struct language_defn *language)
@@ -204,8 +207,9 @@ gdbpy_enter::gdbpy_enter  (struct gdbarch *gdbarch,
   if (!gdb_python_initialized)
     error (_("Python not initialized"));
 
-  m_previous_active = set_active_ext_lang (&extension_language_python);
+  toggle_completion_func(true);
 
+  m_previous_active = set_active_ext_lang (&extension_language_python);
   m_state = PyGILState_Ensure ();
 
   python_gdbarch = gdbarch;
@@ -213,10 +217,11 @@ gdbpy_enter::gdbpy_enter  (struct gdbarch *gdbarch,
 
   /* Save it and ensure ! PyErr_Occurred () afterwards.  */
   m_error.emplace ();
+
+  toggle_completion_func(true);
 }
 
-gdbpy_enter::~gdbpy_enter ()
-{
+gdbpy_enter::~gdbpy_enter (){
   /* Leftover Python error is forbidden by Python Exception Handling.  */
   if (PyErr_Occurred ())
     {
@@ -224,18 +229,19 @@ gdbpy_enter::~gdbpy_enter ()
       gdbpy_print_stack ();
       warning (_("internal error: Unhandled Python exception"));
     }
+  toggle_completion_func(false);
 
   m_error->restore ();
 
-  python_gdbarch = m_gdbarch;
-  python_language = m_language;
+  python_gdbarch = m_gdbarch;  python_language = m_language;
 
   restore_active_ext_lang (m_previous_active);
   PyGILState_Release (m_state);
+
+  toggle_completion_func(false);
 }
 
-/* A helper class to save and restore the GIL, but without touching
-   the other globals that are handled by gdbpy_enter.  */
+/* A helper class to save and restore the GIL, but without touching   the other globals that are handled by gdbpy_enter.  */
 
 class gdbpy_gil
 {
@@ -376,10 +382,9 @@ python_run_simple_file (FILE *file, const char *filename)
   if (return_value == nullptr)
     {
       /* Use PyErr_PrintEx instead of gdbpy_print_stack to better match the
-	 behavior of the non-Windows codepath.  */
+         behavior of the non-Windows codepath.  */
       PyErr_PrintEx(0);
     }
-
 #endif /* _WIN32 */
 }
 
@@ -1204,24 +1209,23 @@ gdbpy_write (PyObject *self, PyObject *args, PyObject *kw)
   try
     {
       switch (stream_type)
-	{
-	case 1:
-	  {
+        {
+        case 1:
+          {
 	    fprintf_filtered (gdb_stderr, "%s", arg);
 	    break;
-	  }
-	case 2:
-	  {
+          }
+        case 2:
+          {
 	    fprintf_filtered (gdb_stdlog, "%s", arg);
 	    break;
-	  }
-	default:
-	  fprintf_filtered (gdb_stdout, "%s", arg);
-	}
+          }
+        default:
+          fprintf_filtered (gdb_stdout, "%s", arg);
+        }
     }
   catch (const gdb_exception &except)
-    {
-      GDB_PY_HANDLE_EXCEPTION (except);
+    {      GDB_PY_HANDLE_EXCEPTION (except);
     }
 
   Py_RETURN_NONE;
@@ -1619,23 +1623,9 @@ finalize_python (void *ignore)
 }
 
 #ifdef IS_PY3K
-static struct PyModuleDef python_GdbModuleDef =
-{
-  PyModuleDef_HEAD_INIT,
-  "_gdb",
-  NULL,
-  -1,
-  python_GdbMethods,
-  NULL,
-  NULL,
-  NULL,
-  NULL
-};
-
 /* This is called via the PyImport_AppendInittab mechanism called
    during initialization, to make the built-in _gdb module known to
-   Python.  */
-PyMODINIT_FUNC init__gdb_module (void);
+   Python.  */PyMODINIT_FUNC init__gdb_module (void);
 PyMODINIT_FUNC
 init__gdb_module (void)
 {
@@ -1646,17 +1636,8 @@ init__gdb_module (void)
 static bool
 do_start_initialization ()
 {
-#ifdef WITH_PYTHON_PATH
-  /* Work around problem where python gets confused about where it is,
-     and then can't find its libraries, etc.
-     NOTE: Python assumes the following layout:
-     /foo/bin/python
-     /foo/lib/pythonX.Y/...
-     This must be done before calling Py_Initialize.  */
-  gdb::unique_xmalloc_ptr<char> progname
-    (concat (ldirname (python_libdir.c_str ()).c_str (), SLASH_STRING, "bin",
-	      SLASH_STRING, "python", (char *) NULL));
 #ifdef IS_PY3K
+  size_t progsize, count;
   /* Python documentation indicates that the memory given
      to Py_SetProgramName cannot be freed.  However, it seems that
      at least Python 3.7.4 Py_SetProgramName takes a copy of the
@@ -1665,16 +1646,26 @@ do_start_initialization ()
      program_name, and respect the requirement of Py_SetProgramName
      for Python versions that do not duplicate program_name.  */
   static wchar_t *progname_copy;
+#endif
 
+#ifdef WITH_PYTHON_PATH
+  /* Work around problem where python gets confused about where it is,
+     and then can't find its libraries, etc.     NOTE: Python assumes the following layout:
+     /foo/bin/python
+     /foo/lib/pythonX.Y/...
+     This must be done before calling Py_Initialize.  */
+  gdb::unique_xmalloc_ptr<char> progname
+    (concat (ldirname (python_libdir.c_str ()).c_str (), SLASH_STRING, "bin",
+	      SLASH_STRING, "python", (char *) NULL));
+#ifdef IS_PY3K
   std::string oldloc = setlocale (LC_ALL, NULL);
   setlocale (LC_ALL, "");
-  size_t progsize = strlen (progname.get ());
+  progsize = strlen (progname.get ());
   progname_copy = XNEWVEC (wchar_t, progsize + 1);
-  size_t count = mbstowcs (progname_copy, progname.get (), progsize + 1);
+  count = mbstowcs (progname_copy, progname.get (), progsize + 1);
   if (count == (size_t) -1)
     {
-      fprintf (stderr, "Could not convert python path to string\n");
-      return false;
+      fprintf (stderr, "Could not convert python path to string\n");      return false;
     }
   setlocale (LC_ALL, oldloc.c_str ());
 
@@ -1980,10 +1971,15 @@ gdbpy_initialized (const struct extension_language_defn *extlang)
   return gdb_python_initialized;
 }
 
+#endif /* HAVE_PYTHON */
+
+
+
+#ifdef HAVE_PYTHON
+
 PyMethodDef python_GdbMethods[] =
 {
-  { "history", gdbpy_history, METH_VARARGS,
-    "Get a value from history" },
+  { "history", gdbpy_history, METH_VARARGS,    "Get a value from history" },
   { "execute", (PyCFunction) execute_gdb_command, METH_VARARGS | METH_KEYWORDS,
     "execute (command [, from_tty] [, to_string]) -> [String]\n\
 Evaluate command, a string, as a gdb CLI command.  Optionally returns\n\
@@ -2122,14 +2118,28 @@ Register a TUI window constructor." },
   {NULL, NULL, 0, NULL}
 };
 
+#ifdef IS_PY3K
+struct PyModuleDef python_GdbModuleDef =
+{
+  PyModuleDef_HEAD_INIT,
+  "_gdb",
+  NULL,
+  -1,
+  python_GdbMethods,
+  NULL,
+  NULL,
+  NULL,
+  NULL
+};
+#endif
+
 /* Define all the event objects.  */
 #define GDB_PY_DEFINE_EVENT_TYPE(name, py_name, doc, base) \
   PyTypeObject name##_event_object_type		    \
-	CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("event_object") \
+        CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("event_object") \
     = { \
       PyVarObject_HEAD_INIT (NULL, 0)				\
-      "gdb." py_name,                             /* tp_name */ \
-      sizeof (event_object),                      /* tp_basicsize */ \
+      "gdb." py_name,                             /* tp_name */ \      sizeof (event_object),                      /* tp_basicsize */ \
       0,                                          /* tp_itemsize */ \
       evpy_dealloc,                               /* tp_dealloc */ \
       0,                                          /* tp_print */ \
